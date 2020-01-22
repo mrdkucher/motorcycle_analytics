@@ -8,6 +8,7 @@ import sqlite3
 import re
 
 from twisted.internet import reactor, defer
+from twisted.application import service, internet
 
 from datetime import datetime
 
@@ -20,11 +21,13 @@ def parse_feed(url):
     return feed
     
 def clean_feed(feed):
-    # replace dollar sign code with '$'
     for post in feed.entries:
         for item in post:
             if isinstance(post[item], str):
+                # replace dollar sign code with '$'
                 post[item] = post[item].replace("&#x0024;", "$")
+                # replace ' with "
+                post[item] = post[item].replace("'", "\"")
 
 class MotorcycleAnalytics(object):
     db = None
@@ -43,7 +46,6 @@ class MotorcycleAnalytics(object):
 
     def insertNewMotorcycles(self):
         c = self.db.cursor()
-        c.execute('''DROP TABLE motorcycles;''')
         if not self.checkTableExists('motorcycles'):
             # Create table
 
@@ -66,13 +68,25 @@ class MotorcycleAnalytics(object):
 
         for post in self.feed.entries:
             title, location, price, city, region = self.split_titles(post.title, post.id)
+
+            # check for image:
+            image = ''
+            try:
+                image = post.enc_enclosure['resource']
+            except AttributeError:
+                pass
             
             result = c.execute("SELECT 1 FROM motorcycles WHERE title = {};".format(repr(title)))
             if result.fetchone() is None:
-                c.execute('INSERT into motorcycles VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {});'
+                command = ('INSERT into motorcycles VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {});'
                     .format(repr(title), repr(post.summary), repr(post.id), price,
-                    repr(post.enc_enclosure['resource']), repr(location), repr(region),
+                    repr(image), repr(location), repr(region),
                     repr(city), repr(post.published), repr(post.updated)))
+                try:
+                    c.execute(command)
+                except Exception as e:
+                    print(e)
+                    print(command)
         
         c.close
         
@@ -129,7 +143,7 @@ def main_twisted():
     m.get_db('motos.db')
     m.get_feed()
     m.insertNewMotorcycles()
-    m.printAllRows()
+    #m.printAllRows()
     
     m.db.close()
     
@@ -137,7 +151,3 @@ def main_twisted():
 
 #reactor.callLater(0, main_twisted)
 main_twisted()
-
-#def failure():
-#    print('Something went wrong.')
-#reactor.run()
